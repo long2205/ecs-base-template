@@ -2,7 +2,6 @@ import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 // import * as sqs from 'aws-cdk-lib/aws-sqs';
 import { envConstants, commonConstants } from './constants';
-import * as path from 'path';
 
 type ObjectKey = keyof typeof envConstants;
 
@@ -63,16 +62,13 @@ export class EcsBaseStack extends cdk.Stack {
       defaultAction: cdk.aws_elasticloadbalancingv2.ListenerAction.redirect({port: "443",protocol: cdk.aws_elasticloadbalancingv2.ApplicationProtocol.HTTPS})
     });
 
-    const httpsListener = loadBalancer.addListener('listenerHttps', { 
-      port: 443,
-      protocol: cdk.aws_elasticloadbalancingv2.ApplicationProtocol.HTTPS,
-      certificates: [ cdk.aws_elasticloadbalancingv2.ListenerCertificate.fromArn(envConstants[stackName].certLB) ],
-      defaultAction: cdk.aws_elasticloadbalancingv2.ListenerAction.fixedResponse(404,{
-        contentType: 'text/html',
-        messageBody: 'お指定URLをご確認ください！'
-      }),
-      sslPolicy: cdk.aws_elasticloadbalancingv2.SslPolicy.TLS12
-    });
+    // const httpsListener = loadBalancer.addListener('listenerHttps', { 
+    //   port: 443,
+    //   defaultAction: cdk.aws_elasticloadbalancingv2.ListenerAction.fixedResponse(404,{
+    //     contentType: 'text/html',
+    //     messageBody: 'お指定URLをご確認ください！'
+    //   }),
+    // });
 
     const targetGroup = new cdk.aws_elasticloadbalancingv2.ApplicationTargetGroup(this, "TargetGroupFront", {
       targetGroupName: `ecs-base-tg-${props?.stackName}`,
@@ -82,14 +78,14 @@ export class EcsBaseStack extends cdk.Stack {
       vpc: vpc
     });
 
-    const httpsRule = new cdk.aws_elasticloadbalancingv2.ApplicationListenerRule(this, "HttpsFrontEndRule", {
-      listener: httpsListener,
-      priority: 1,
-      conditions: [
-        cdk.aws_elasticloadbalancingv2.ListenerCondition.hostHeaders([envConstants[stackName].url])
-      ],
-      targetGroups: [targetGroup]
-    });
+    // const httpsRule = new cdk.aws_elasticloadbalancingv2.ApplicationListenerRule(this, "HttpsFrontEndRule", {
+    //   listener: httpsListener,
+    //   priority: 1,
+    //   conditions: [
+    //     cdk.aws_elasticloadbalancingv2.ListenerCondition.hostHeaders([envConstants[stackName].url])
+    //   ],
+    //   targetGroups: [targetGroup]
+    // });
     
     /**
      * ECS Fargate Cluster
@@ -105,7 +101,7 @@ export class EcsBaseStack extends cdk.Stack {
 
     //Source
     const ecrRepo = new cdk.aws_ecr.Repository(this, 'ECRRepo',{
-      repositoryName: `${commonConstants.GithubRepoName}-ecrRepo`
+      repositoryName: `${commonConstants.GithubRepoName}-ecrrepo`
     });
 
     const sourceOutput = new cdk.aws_codepipeline.Artifact();
@@ -176,16 +172,20 @@ export class EcsBaseStack extends cdk.Stack {
     
     const serviceFargate = new cdk.aws_ecs_patterns.ApplicationLoadBalancedFargateService(this, "Deploy",{
       taskImageOptions: {
-        image: cdk.aws_ecs.ContainerImage.fromRegistry(`${ecrRepo.repositoryUri}:latest`),
+        //caanf 1 image co san, vi chua co pipeline
+        image: cdk.aws_ecs.ContainerImage.fromRegistry("public.ecr.aws/b4f2s5k2/project-demo-reinvent/nginx-web-app:latest"),
         containerName: "app",
         executionRole: deployRole
       },
       desiredCount: 1,
       serviceName: "web-micro-service-name",
-      listenerPort: 80,
+      listenerPort: 443,
       cluster: cluster,
       loadBalancer: loadBalancer,
       assignPublicIp: true,
+      protocol: cdk.aws_elasticloadbalancingv2.ApplicationProtocol.HTTPS,
+      certificate: cdk.aws_certificatemanager.Certificate.fromCertificateArn(this, "LoadbalancerCert",envConstants[stackName].certLB) ,
+      sslPolicy: cdk.aws_elasticloadbalancingv2.SslPolicy.TLS12
     });
 
     const deployOutput = new cdk.aws_codepipeline.Artifact("imagedefinitions");
@@ -202,7 +202,7 @@ export class EcsBaseStack extends cdk.Stack {
     })
 
     const manualApprovalAction = new cdk.aws_codepipeline_actions.ManualApprovalAction({
-      actionName: "Manual Approval for Production",
+      actionName: "ManualApprovalProduction",
       runOrder: 1
     });
 
